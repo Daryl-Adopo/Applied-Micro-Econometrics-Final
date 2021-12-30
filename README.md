@@ -1,5 +1,4 @@
-# Applied-Micro-Econometrics-Final
-Regression Discontinuity Design: Impact of Counties' Political Affiliation on Covid-19 Cases, Deaths, and Vaccinations
+# Regression Discontinuity Design: Impact of Counties' Political Affiliation on Covid-19 Cases, Deaths, and Vaccinations
 
 **Daryl Adopo<sup>1</sup>** and **Robert Jeffries<sup>1</sup>** \
 <sup>1</sup> Walton Graduate School of Business, University of Arkansas, Fayetteville, Arkansas, United States 
