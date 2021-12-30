@@ -1,0 +1,599 @@
+{smcl}
+{com}{sf}{ul off}{txt}{.-}
+      name:  {res}<unnamed>
+       {txt}log:  {res}O:\Fall 2021\U of A\MET HW\Final Project\Adopo_Jeffries_Final_log.smcl
+  {txt}log type:  {res}smcl
+ {txt}opened on:  {res}17 Dec 2021, 09:28:22
+{txt}
+{com}. 
+. /* READ ME
+> 
+> University of Arkansas, Fayetteville, Arkansas
+> Walton Graduate School of Business
+> ECON 5783, Applied Microeconometrics
+> 
+> For: Course Project
+> Written by: Daryl Adopo & Robby Jeffries
+> Date: 17 December 2021
+> 
+> */
+. 
+. 
+. 
+. 
+. 
+. **#
+. // ---------------------------------------------------- (0) Installing packages and graph schemes
+. 
+. local install = 1 // Change this to 1 to download packages/schemes for this project
+{txt}
+{com}. 
+. if `install' == 1 {c -(}
+.         ssc install rdrobust, replace // Includes many useful commands for RDD
+{txt}checking {hilite:rdrobust} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+{com}.         ssc install estout, replace // For storing and outputting results
+{txt}checking {hilite:estout} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+{com}.         net install rddensity, from("https://raw.githubusercontent.com/rdpackages/rddensity/master/stata") replace
+checking {hilite:rddensity} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+.         net install lpdensity, from("https://raw.githubusercontent.com/nppackages/lpdensity/master/stata") replace
+checking {hilite:lpdensity} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+.         net install rdpower, from("https://raw.githubusercontent.com/rdpackages/rdpower/master/stata") replace
+checking {hilite:rdpower} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+. 
+. 
+.                 /* Note on Schemes: The default graphing options in STATA are ugly.
+>                         A user-developed package called schemepack includes many more
+>                         visually appealing schemes. The code below installs that package
+>                         and sets the scheme to one I like, but you should check out the
+>                         github page and pick one for yourself
+>                         
+>                         https://github.com/asjadnaqvi/Stata-schemes */
+.                         
+.         ssc install schemepack, replace // Appealing graph schemes (optional)
+{txt}checking {hilite:schemepack} consistency and verifying not already installed...
+installing into C:\Users\rejeffri\ado\plus\...
+installation complete.
+{com}.         set scheme white_tableau // Add ", perm" after this command to lock change in
+. {c )-}
+{txt}
+{com}. 
+. ******************************************************************************************
+. 
+. 
+. 
+. 
+. **#
+. // ----------------------------------------------------- (1) Loading data and initial exploration
+. import delimited using "O:\Fall 2021\U of A\MET HW\Final Project\county_census_vax.csv", clear
+{res}{txt}(encoding automatically selected: ISO-8859-1)
+{res}{text}(14 vars, 3,038 obs)
+
+{com}. 
+. // NOTE: Our COVID data is from one day, 11/16/2020. 
+. 
+. * First thing to do is get a sense of our variables
+. summarize _all, sep(0)
+
+{txt}    Variable {c |}        Obs        Mean    Std. dev.       Min        Max
+{hline 13}{c +}{hline 57}
+{space 8}year {c |}{res}      3,038        2016           0       2016       2016
+{txt}{space 7}state {c |}{res}          0
+{txt}{space 4}state_po {c |}{res}          0
+{txt}{space 1}county_name {c |}{res}          0
+{txt}{space 8}perc {c |}{res}          0
+{txt}{space 6}partyy {c |}{res}          0
+{txt}{space 7}datex {c |}{res}          0
+{txt}{space 2}death_rate {c |}{res}      3,038    .0007086    .0011324          0   .0260361
+{txt}{space 3}case_rate {c |}{res}      3,038    .0391432    .0456962    .000721   1.145119
+{txt}{space 7}datey {c |}{res}          0
+{txt}completene~t {c |}{res}      3,038    .8142446    .2877802          0       .988
+{txt}administer~p {c |}{res}      3,038    .3655382    .2209842          0       .999
+{txt}series_com~v {c |}{res}          0
+{txt}series_com~t {c |}{res}      3,038    .3523756    .1734873          0       .999
+{txt}
+{com}. 
+. * Convert string to float
+. destring perc, replace force
+{txt}perc: contains nonnumeric characters; {res}replaced {txt}as {res}double
+{txt}(1 missing value generated)
+{res}{txt}
+{com}. 
+. // Often RDDs are motivated by a simple scatterplot with the running variable on the x-axis and outcome on the y.
+. // Try making such a scatter plot here.
+. twoway scatter case_rate perc, xline(0.5) // Make a simple scatterplot
+{res}{txt}
+{com}. 
+. label variable perc "Percent Republican"
+{txt}
+{com}. gen bin = floor(perc*100) // Creating bins of each percentage
+{txt}(1 missing value generated)
+
+{com}. replace bin = bin + 1 if bin >= 0 // Personal preference not to have a 0 bin
+{txt}(3,037 real changes made)
+
+{com}. bysort bin: egen avg_deaths = mean(death_rate) // Average death rate by bin
+{txt}
+{com}. twoway scatter avg_deaths bin, xline(50) // Make a simple scatterplot
+{res}{txt}
+{com}. 
+. ******************************************************************************************
+. 
+. 
+. 
+. 
+. 
+. **#
+. // ---------------------------------------------------- (2) Testing for gaming, heaping and power
+. * We need to check for a few issues that might undermine the continuity assumption.
+. * Firstly, do we see evidence that people "gamed" the cutoff to try to get on one side?
+. bysort bin: egen count = count(bin)
+{txt}
+{com}. twoway bar count bin, xline(50)
+{res}{txt}
+{com}. 
+. 
+. * Testing for gaming of the cutoff
+. rddensity perc, c(0.5) plot ///
+> cirl_opt(color(blue%0)) cirr_opt(color(red%0)) /// left and right confidence interval
+> esll_opt(color(blue%0)) eslr_opt(color(red%0)) /// left and right line
+> histl_opt(color(blue%30) barwidth(.009)) /// left histogram
+> histr_opt(color(red%30) barwidth(.007)) // right histogram
+{res}Computing data-driven bandwidth selectors.
+
+Point estimates and standard errors have been adjusted for repeated observations.
+(Use option {it:nomasspoints} to suppress this adjustment.)
+
+RD Manipulation test using local polynomial density estimation.
+
+{txt}{ralign 9: c = }{res}    0.500{col 19} {c |}{col 22}{txt}Left of c{col 33}Right of c{col 53}Number of obs = {res}        3037
+{txt}{hline 19}{c +}{hline 22}{col 53}Model         = {res}{ralign 12:unrestricted}
+{txt}{ralign 18:Number of obs}{col 19} {c |} {col 21}{res}      586{col 34}     2451{col 53}{txt}BW method     = {res}{ralign 12:comb}
+{txt}{ralign 18:Eff. Number of obs}{col 19} {c |} {col 21}{res}      286{col 34}      425{col 53}{txt}Kernel        = {res}{ralign 12:triangular}
+{txt}{ralign 18:Order est. (p)}{col 19} {c |} {col 21}{res}        2{col 34}        2{col 53}{txt}VCE method    = {res}{ralign 12:jackknife}
+{txt}{ralign 18:Order bias (q)}{col 19} {c |} {col 21}{res}        3{col 34}        3
+{txt}{ralign 18:BW est. (h)}{col 19} {c |} {col 21}{res}    0.090{col 34}    0.090
+
+Running variable: perc.
+{txt}{hline 19}{c TT}{hline 22}
+{ralign 18:Method}{col 19} {c |} {col 23}    T{col 38}P>|T|
+{hline 19}{c +}{hline 22}
+{ralign 18:Robust}{col 19} {c |} {col 21}{res}  -1.9588{col 34}   0.0501
+{txt}{hline 19}{c BT}{hline 22}
+
+{res}P-values of binomial tests.{txt} (H0: prob = .5)
+{hline 19}{c TT}{hline 22}{c TT}{hline 10}
+{ralign 18: Window Length / 2}{col 20}{c |}{ralign 9: <c}{col 33}{ralign 9: >=c}{col 43}{c |}{col 49}P>|T|
+{hline 19}{c +}{hline 22}{c +}{hline 10}
+{res}{col 10}    0.003{col 20}{c |}       12{col 33}        8{col 43}{c |}{col 45}   0.5034
+{col 10}    0.006{col 20}{c |}       24{col 33}       18{col 43}{c |}{col 45}   0.4408
+{col 10}    0.009{col 20}{c |}       36{col 33}       29{col 43}{c |}{col 45}   0.4570
+{col 10}    0.012{col 20}{c |}       44{col 33}       36{col 43}{c |}{col 45}   0.4340
+{col 10}    0.015{col 20}{c |}       55{col 33}       43{col 43}{c |}{col 45}   0.2664
+{col 10}    0.018{col 20}{c |}       60{col 33}       52{col 43}{c |}{col 45}   0.5085
+{col 10}    0.021{col 20}{c |}       72{col 33}       64{col 43}{c |}{col 45}   0.5485
+{col 10}    0.024{col 20}{c |}       85{col 33}       74{col 43}{c |}{col 45}   0.4278
+{col 10}    0.027{col 20}{c |}      100{col 33}       80{col 43}{c |}{col 45}   0.1565
+{col 10}    0.030{col 20}{c |}      111{col 33}       88{col 43}{c |}{col 45}   0.1186
+{txt}{hline 19}{c BT}{hline 22}{c BT}{hline 10}
+{res}{txt}
+{com}. 
+. 
+. 
+. * Testing for statistical power (benchmark of 0.8)
+. rdpow case_rate perc, c(0.5) // What effect size are we powered to detect?
+
+{txt}{ralign 21: Cutoff c = .5}{col 22} {c |} {col 23}Left of {res}c{col 36}{txt}Right of {res}c{col 54}{txt}Number of obs = {res}      3037
+{txt}{hline 22}{c +}{hline 22}{col 54}BW type       = {res}{ralign 10:mserd}
+{txt}{ralign 21:Number of obs}{col 22} {c |} {col 23}{res}      586{col 37}     2451{col 54}{txt}Kernel        = {res}{ralign 10:Triangular}
+{txt}{ralign 21:Eff. Number of obs}{col 22} {c |} {col 23}{res}      255{col 37}      358{col 54}{txt}VCE method    = {res}{ralign 10:NN}
+{txt}{ralign 21:BW loc. poly. (h)}{col 22} {c |} {col 23}{res}    0.079{col 37}    0.079{col 54}{txt}Derivative    = {res}         0
+{txt}{ralign 21:Order loc. poly. (p)}{col 22} {c |} {col 23}{res}        1{col 37}        1{col 54}{txt}HA:       tau = {res}     0.010
+{txt}{hline 22}{c +}{hline 22}
+{ralign 21:Sampling BW}{col 22} {c |} {col 23}{res}    0.079{col 37}    0.079
+{txt}{ralign 21:New sample}{col 22} {c |} {col 23}{res}      255{col 37}      358
+
+
+{txt}Outcome: {res}case_rate{txt}. Running variable: {res}perc{txt}.
+{hline 22}{c TT}{hline 56}
+Power against:{col 22} {c |}{col 25}H0: tau= {col 37}0.2*tau = {col 49}0.5*tau = {col 61}0.8*tau = {col 75}tau =
+{col 22} {c |}{col 26}{res}  0.000{col 39}  0.002{col 51}  0.005{col 63}  0.008{col 73}  0.010
+{txt}{hline 22}{c +}{hline 56}
+{ralign 21:Robust bias-corrected}{col 22} {c |} {col 28}{res}0.050{col 41}0.070{col 53}0.182{col 65}0.387{col 75}0.552
+{txt}{hline 22}{c BT}{hline 56}
+
+{com}. 
+. 
+. 
+. ******************************************************************************************
+. 
+. 
+. 
+. 
+. 
+. **#
+. // --------------------------------------------------- (3a) Estimation via OLS and interpretation
+. gen treat = perc > 0.5 // Define a treatment variable
+{txt}
+{com}. label variable treat "Treatment"
+{txt}
+{com}. 
+. * Generate new variables for regressions
+. gen perc_std = perc - 0.5 // normalize the percent around 0
+{txt}(1 missing value generated)
+
+{com}. gen treat_perc = treat * perc_std // interaction term
+{txt}(1 missing value generated)
+
+{com}. gen perc_std2 = perc_std * perc_std     // for quadratic regression
+{txt}(1 missing value generated)
+
+{com}. gen treat_perc2 = treat_perc * perc_std2 // for quadratic regression
+{txt}(1 missing value generated)
+
+{com}. gen bins = round(perc_std, 0.01) // Creating bins of each percentage
+{txt}(1 missing value generated)
+
+{com}. replace bins = bins + .01 if bins >= 0 // Personal preference not to have a 0 bin
+{txt}(2,471 real changes made)
+
+{com}. bysort bins: egen avg_deaths2 = mean(death_rate) // Average death rate by bin
+{txt}
+{com}. bysort bins: egen avg_cases = mean(case_rate) // Average death rate by bin
+{txt}
+{com}. bysort bins: egen avg_vax = mean(series_complete_18pluspop_pct) // Average death rate by bin
+{txt}
+{com}. 
+. * Label Variables
+. la var death_rate "Death Rate"
+{txt}
+{com}. la var case_rate "Case Rate"
+{txt}
+{com}. la var series_complete_18pluspop_pct "Vax Rate 18+"
+{txt}
+{com}. la var perc_std "% Republican Linear"
+{txt}
+{com}. la var treat_perc "Treatment x % Rep."
+{txt}
+{com}. la var perc_std2 "% Rep. Quadratic"
+{txt}
+{com}. la var treat_perc2 "Treat x % Rep. Sqrd."
+{txt}
+{com}. 
+. * Regressions on death rate
+. eststo reg_d1: qui areg death_rate treat perc_std, robust absorb(state) // linear regression without interaction term
+{txt}
+{com}. eststo reg_d2: qui areg death_rate treat perc_std treat_perc, robust absorb(state) // linear regression with interaction term
+{txt}
+{com}. eststo reg_d3: qui areg death_rate treat perc_std perc_std2 treat_perc treat_perc2, robust absorb(state) // quadratic regression
+{txt}
+{com}. 
+. * Regressions on case rate
+. eststo reg_c1: qui areg case_rate treat perc_std, robust absorb(state) // linear regression without interaction term
+{txt}
+{com}. eststo reg_c2: qui areg case_rate treat perc_std treat_perc, robust absorb(state) // linear regression with interaction term
+{txt}
+{com}. eststo reg_c3: qui areg case_rate treat perc_std perc_std2 treat_perc treat_perc2, robust absorb(state) // quadratic regression
+{txt}
+{com}. 
+. * Regressions on vaccination rate
+. eststo reg_v1: qui areg series_complete_18pluspop_pct treat perc_std, robust absorb(state) // linear regression without interaction term
+{txt}
+{com}. eststo reg_v2: qui areg series_complete_18pluspop_pct treat perc_std treat_perc, robust absorb(state) // linear regression with interaction term
+{txt}
+{com}. eststo reg_v3: qui areg series_complete_18pluspop_pct treat perc_std perc_std2 treat_perc treat_perc2, robust absorb(state) // quadratic regression
+{txt}
+{com}. 
+. * Generate table with both linear and quadratic regressions
+. esttab reg_d*, se label
+{res}
+{txt}{hline 68}
+{txt}                              (1)             (2)             (3)   
+{txt}                       Death Rate      Death Rate      Death Rate   
+{txt}{hline 68}
+{txt}Treatment           {res}    -0.000179**    -0.0000597       0.0000134   {txt}
+                    {res} {ralign 12:{txt:(}0.0000623{txt:)}}    {ralign 12:{txt:(}0.0000538{txt:)}}    {ralign 12:{txt:(}0.0000803{txt:)}}   {txt}
+
+{txt}% Republican Linear {res}    -0.000715**      -0.00257**      -0.00690*  {txt}
+                    {res} {ralign 12:{txt:(}0.000226{txt:)}}    {ralign 12:{txt:(}0.000945{txt:)}}    {ralign 12:{txt:(}0.00300{txt:)}}   {txt}
+
+{txt}Treatment x % Rep.  {res}                      0.00240*        0.00942*  {txt}
+                    {res}                 {ralign 12:{txt:(}0.000982{txt:)}}    {ralign 12:{txt:(}0.00416{txt:)}}   {txt}
+
+{txt}% Rep. Quadratic    {res}                                      -0.0136*  {txt}
+                    {res}                                 {ralign 12:{txt:(}0.00696{txt:)}}   {txt}
+
+{txt}Treat x % Rep. Sqrd.{res}                                       0.0195   {txt}
+                    {res}                                 {ralign 12:{txt:(}0.0119{txt:)}}   {txt}
+
+{txt}Constant            {res}     0.000949***     0.000725***     0.000523***{txt}
+                    {res} {ralign 12:{txt:(}0.0000798{txt:)}}    {ralign 12:{txt:(}0.0000516{txt:)}}    {ralign 12:{txt:(}0.000117{txt:)}}   {txt}
+{txt}{hline 68}
+{txt}Observations        {res}         3037            3037            3037   {txt}
+{txt}{hline 68}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. esttab reg_c*, se label
+{res}
+{txt}{hline 68}
+{txt}                              (1)             (2)             (3)   
+{txt}                        Case Rate       Case Rate       Case Rate   
+{txt}{hline 68}
+{txt}Treatment           {res}     -0.00490*      -0.000694         0.00376   {txt}
+                    {res} {ralign 12:{txt:(}0.00237{txt:)}}    {ralign 12:{txt:(}0.00172{txt:)}}    {ralign 12:{txt:(}0.00303{txt:)}}   {txt}
+
+{txt}% Republican Linear {res}      -0.0310***      -0.0962*         -0.321*  {txt}
+                    {res} {ralign 12:{txt:(}0.00888{txt:)}}    {ralign 12:{txt:(}0.0397{txt:)}}    {ralign 12:{txt:(}0.129{txt:)}}   {txt}
+
+{txt}Treatment x % Rep.  {res}                       0.0845*          0.441*  {txt}
+                    {res}                 {ralign 12:{txt:(}0.0411{txt:)}}    {ralign 12:{txt:(}0.179{txt:)}}   {txt}
+
+{txt}% Rep. Quadratic    {res}                                       -0.707*  {txt}
+                    {res}                                 {ralign 12:{txt:(}0.297{txt:)}}   {txt}
+
+{txt}Treat x % Rep. Sqrd.{res}                                        1.064*  {txt}
+                    {res}                                 {ralign 12:{txt:(}0.503{txt:)}}   {txt}
+
+{txt}Constant            {res}       0.0472***       0.0394***       0.0289***{txt}
+                    {res} {ralign 12:{txt:(}0.00334{txt:)}}    {ralign 12:{txt:(}0.00158{txt:)}}    {ralign 12:{txt:(}0.00477{txt:)}}   {txt}
+{txt}{hline 68}
+{txt}Observations        {res}         3037            3037            3037   {txt}
+{txt}{hline 68}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. esttab reg_v*, se label
+{res}
+{txt}{hline 68}
+{txt}                              (1)             (2)             (3)   
+{txt}                     Vax Rate 18+    Vax Rate 18+    Vax Rate 18+   
+{txt}{hline 68}
+{txt}Treatment           {res}       0.0132         0.00644         0.00764   {txt}
+                    {res} {ralign 12:{txt:(}0.00749{txt:)}}    {ralign 12:{txt:(}0.00838{txt:)}}    {ralign 12:{txt:(}0.00950{txt:)}}   {txt}
+
+{txt}% Republican Linear {res}       -0.312***       -0.207***       -0.262   {txt}
+                    {res} {ralign 12:{txt:(}0.0213{txt:)}}    {ralign 12:{txt:(}0.0590{txt:)}}    {ralign 12:{txt:(}0.154{txt:)}}   {txt}
+
+{txt}Treatment x % Rep.  {res}                       -0.135*        -0.0501   {txt}
+                    {res}                 {ralign 12:{txt:(}0.0636{txt:)}}    {ralign 12:{txt:(}0.239{txt:)}}   {txt}
+
+{txt}% Rep. Quadratic    {res}                                       -0.172   {txt}
+                    {res}                                 {ralign 12:{txt:(}0.484{txt:)}}   {txt}
+
+{txt}Treat x % Rep. Sqrd.{res}                                        0.268   {txt}
+                    {res}                                 {ralign 12:{txt:(}0.825{txt:)}}   {txt}
+
+{txt}Constant            {res}        0.384***        0.396***        0.394***{txt}
+                    {res} {ralign 12:{txt:(}0.00494{txt:)}}    {ralign 12:{txt:(}0.00743{txt:)}}    {ralign 12:{txt:(}0.00931{txt:)}}   {txt}
+{txt}{hline 68}
+{txt}Observations        {res}         3037            3037            3037   {txt}
+{txt}{hline 68}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. 
+. 
+. 
+. 
+. **#
+. // --------------------------------------------------- (4) BANDWIDTH TEST on RUNNING VARIABLE
+. 
+. 
+. 
+. est clear // clear any existing estimations
+{res}{txt}
+{com}. 
+. 
+. 
+. * Death Rate Bandwidth - Linear Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg death_rate treat perc_std treat_perc if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regd1_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regd1_*, keep(treat) ti("Death Rates Across Multiple Bandwidths - Linear Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Death Rates Across Multiple Bandwidths - Linear Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}   -0.0000561       0.0000525        0.000124      -0.0000430   {txt}
+                    {res} {ralign 12:{txt:(}0.0000550{txt:)}}    {ralign 12:{txt:(}0.0000780{txt:)}}    {ralign 12:{txt:(}0.000147{txt:)}}    {ralign 12:{txt:(}0.0000704{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. * Death Rate Bandwidth - Quadratic Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg death_rate treat perc_std perc_std2 treat_perc treat_perc2 if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regd2_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regd2_*, keep(treat) ti("Death Rates Across Multiple Bandwidths - Quadratic Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Death Rates Across Multiple Bandwidths - Quadratic Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}    0.0000524       0.0000372       -0.000149       0.0000309   {txt}
+                    {res} {ralign 12:{txt:(}0.0000846{txt:)}}    {ralign 12:{txt:(}0.0000933{txt:)}}    {ralign 12:{txt:(}0.0000888{txt:)}}    {ralign 12:{txt:(}0.0000956{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. 
+. 
+. 
+. 
+. 
+. * Case Rate Bandwidth - Linear Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg case_rate treat perc_std treat_perc if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regc1_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regc1_*, keep(treat) ti("Case Rates Across Multiple Bandwidths - Linear Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Case Rates Across Multiple Bandwidths - Linear Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}    -0.000554         0.00464         0.00733         0.00216   {txt}
+                    {res} {ralign 12:{txt:(}0.00178{txt:)}}    {ralign 12:{txt:(}0.00295{txt:)}}    {ralign 12:{txt:(}0.00614{txt:)}}    {ralign 12:{txt:(}0.00200{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. * Case Rate Bandwidth - Quadratic Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg case_rate treat perc_std perc_std2 treat_perc treat_perc2 if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regc2_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regc2_*, keep(treat) ti("Case Rates Across Multiple Bandwidths - Quadratic Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Case Rates Across Multiple Bandwidths - Quadratic Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}      0.00506         0.00443        -0.00226         0.00217   {txt}
+                    {res} {ralign 12:{txt:(}0.00324{txt:)}}    {ralign 12:{txt:(}0.00363{txt:)}}    {ralign 12:{txt:(}0.00319{txt:)}}    {ralign 12:{txt:(}0.00254{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. 
+. 
+. 
+. 
+. * Vaccination Rate Bandwidth - Linear Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg series_complete_18pluspop_pct treat perc_std treat_perc if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regv1_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regv1_*, keep(treat) ti("Vaccination Rates Across Multiple Bandwidths - Linear Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Vaccination Rates Across Multiple Bandwidths - Linear Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}      0.00610         0.00754         0.00725         -0.0113   {txt}
+                    {res} {ralign 12:{txt:(}0.00845{txt:)}}    {ralign 12:{txt:(}0.00894{txt:)}}    {ralign 12:{txt:(}0.0104{txt:)}}    {ralign 12:{txt:(}0.0152{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. * Vaccination Rate Bandwidth - Quadratic Fit
+. forvalues h = 0.4(-0.1)0.1 {c -(}
+{txt}  2{com}.         qui areg series_complete_18pluspop_pct treat perc_std perc_std2 treat_perc treat_perc2 if abs(perc_std) <= `h', robust absorb(state) // linear regression without interaction term
+{txt}  3{com}.         tempvar i
+{txt}  4{com}.         gen i = `h'*10
+{txt}  5{com}.         eststo regv2_`i'
+{txt}  6{com}.         drop i
+{txt}  7{com}. {c )-}       
+{txt}
+{com}. esttab regv2_*, keep(treat) ti("Vaccination Rates Across Multiple Bandwidths - Quadratic Fit") mtitles("+-40%" "+-30%" "+-20%" "+-10%") se label
+{res}
+{txt}Vaccination Rates Across Multiple Bandwidths - Quadratic Fit
+{txt}{hline 84}
+{txt}                              (1)             (2)             (3)             (4)   
+{txt}                            +-40%           +-30%           +-20%           +-10%   
+{txt}{hline 84}
+{txt}Treatment           {res}      0.00824          0.0111         0.00152        -0.00295   {txt}
+                    {res} {ralign 12:{txt:(}0.00960{txt:)}}    {ralign 12:{txt:(}0.0106{txt:)}}    {ralign 12:{txt:(}0.0130{txt:)}}    {ralign 12:{txt:(}0.0196{txt:)}}   {txt}
+{txt}{hline 84}
+{txt}Observations        {res}         3020            2662            1705             792   {txt}
+{txt}{hline 84}
+{txt}Standard errors in parentheses
+{txt}* p<0.05, ** p<0.01, *** p<0.001
+
+{com}. 
+. 
+. ******************************************************************************************
+. 
+. 
+. 
+. 
+. **#
+. // --------------------------------------------------- (5) Sharp RDD Visualizations
+. 
+. // Figure of Linear Regression -- Death Rate
+.         #delimit ;
+{txt}delimiter now ;
+{com}.         twoway (lfit death_rate perc_std if perc_std<0,clcolor(gs4) lpattern(dash)) 
+>         (lfit death_rate perc_std if perc_std>=0,clcolor(gs4) lpattern(dash)) 
+>         (scatter avg_deaths2 bins, msize(medsmall) msymbol(circle) mfcolor(white) mlcolor(black) mlwidth(thin) xline(0, lcolor(cranberry) lpattern(dash))), 
+>         ytitle("Death Rate as of 11/16/2020", size(medsmall) margin(small)) ylabel(,labsize(medsmall)  format(%10.7e)) xtitle("Distance to cutoff", size(medsmall) margin(small)) xlabel( -.50(.1).50, labsize(medsmall)) 
+>         graphregion(fcolor(white) lcolor(white)) legend(order(2 "Linear fit" 3 "Percentage bin") size(medlarge)) plotregion(lcolor(black) lwidth(thin));
+{res}{txt}
+{com}.         #delimit cr
+{txt}delimiter now cr
+{com}.         graph export "O:\Fall 2021\U of A\MET HW\Final Project\Figures, with Vax\LinearRegDeath.png", width(1000) replace
+{err}{p 0 4 2}
+file O:\Fall 2021\U of A\MET HW\Final Project\Figures, with Vax\LinearRegDeath.png cannot be modified or erased;
+likely cause is read-only
+directory or file
+{p_end}
+{txt}{search r(608), local:r(608);}
+
+end of do-file
+
+{search r(608), local:r(608);}
+
+{com}. do "\\uem.walton.uark.edu\UEMProfiles_Lab$\rejeffri\RedirectedFolders\Documents\STD2520_000000.tmp"
+{txt}
+{com}. log close
+      {txt}name:  {res}<unnamed>
+       {txt}log:  {res}O:\Fall 2021\U of A\MET HW\Final Project\Adopo_Jeffries_Final_log.smcl
+  {txt}log type:  {res}smcl
+ {txt}closed on:  {res}17 Dec 2021, 09:29:14
+{txt}{.-}
+{smcl}
+{txt}{sf}{ul off}
